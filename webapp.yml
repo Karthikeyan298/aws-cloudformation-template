@@ -145,6 +145,8 @@ Resources:
         yum -y update
         amazon-linux-extras install epel -y
         yum install redis -y
+        sed -i 's/bind 127.0.0.1/bind 0.0.0.0/g' /etc/redis.conf
+        sed -i 's/protected yes/protected no/g' /etc/redis.conf
         systemctl start redis
         systemctl enable redis
 
