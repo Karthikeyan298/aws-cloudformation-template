@@ -3,24 +3,20 @@ Description: Deploy the ec2 instances behind load balancer with ASG
 
 Mappings:
   RegionToAmazonAMI:
-    ap-south-1a:
-      HVM64: ami-01ad94fdf8150776c
-    ap-south-1b:
-      HVM64: ami-01ad94fdf8150776c
-    ap-south-1c:
-      HVM64: ami-01ad94fdf8150776c
+    ap-south-1:
+      HVM64: ami-0eeb03e72075b9bcc
 
 Resources:
   RedisWrapperServerGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       HealthCheckEnabled: true
-      HealthCheckIntervalSeconds: 30
+      HealthCheckIntervalSeconds: 300
       HealthCheckPath: /
       HealthCheckPort: 5000
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
+      HealthyThresholdCount: 5
       Name: PythonRedisWrapperServers
       Port: 5000
       Protocol: HTTP
@@ -29,7 +25,7 @@ Resources:
       # Targets:
       #   - TargetDescription
       TargetType: instance
-      UnhealthyThresholdCount: 5
+      UnhealthyThresholdCount: 10
       VpcId: vpc-c54cbfae
 
   ALBSecurityGroup:
@@ -55,6 +51,11 @@ Resources:
           SourceSecurityGroupId: !Ref ALBSecurityGroup
           FromPort: 5000
           ToPort: 5000
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+
 
       VpcId: vpc-c54cbfae
 
@@ -104,14 +105,62 @@ Resources:
         - !Ref RedisWrapperServerGroup
 
   AppAutoScalingLaunchTemplate: 
+    DependsOn:
+      RedisServer
     Type: AWS::EC2::LaunchTemplate
     Properties: 
       LaunchTemplateData: 
-          ImageId: ami-0eeb03e72075b9bcc
+          ImageId: !FindInMap [ RegionToAmazonAMI, !Ref 'AWS::Region', HVM64 ] 
           KeyName: SSH-AWS
           InstanceType: t2.micro
           SecurityGroupIds: 
             - !Ref AppSecurityGroup
-          # UserData: String
+          UserData: 
+            Fn::Base64: 
+              !Sub |
+                #!/bin/bash -xe
+                exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+                yum -y update
+                yum install git -y
+                yum install python3 -y
+                pip3 install flask redis
+                git clone https://github.com/Karthikeyan298/aws-cloudformation-template.git
+                cd aws-cloudformation-template && REDIS_HOST="${RedisServer.PrivateIp}" FLASK_APP=/aws-cloudformation-template/app.py flask run --host 0.0.0.0
 
       LaunchTemplateName: RedisWrapperServerLaunchTemplate
+
+  # Need to change this as elasticache creation
+  RedisServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: SSH-AWS 
+      ImageId: !FindInMap [ RegionToAmazonAMI, !Ref 'AWS::Region', HVM64 ]
+      InstanceType: t2.micro
+      Monitoring: true
+      SecurityGroupIds:
+        - !Ref RedisSecurityGroup
+      UserData: !Base64 |
+        #!/bin/bash -xe
+        exec >  >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+        yum -y update
+        amazon-linux-extras install epel -y
+        yum install redis -y
+        systemctl start redis
+        systemctl enable redis
+
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allows App traffic to Redis
+      GroupName: RedisSecurityGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+          FromPort: 6379
+          ToPort: 6379
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+
+      VpcId: vpc-c54cbfae
