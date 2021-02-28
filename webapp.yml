@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploy the ec2 instances behind load balancer with ASG
+
+Mappings:
+  RegionToAmazonAMI:
+    ap-south-1a:
+      HVM64: ami-01ad94fdf8150776c
+    ap-south-1b:
+      HVM64: ami-01ad94fdf8150776c
+    ap-south-1c:
+      HVM64: ami-01ad94fdf8150776c
+
+Resources:
+  RedisWrapperServerGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 5000
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Name: PythonRedisWrapperServers
+      Port: 5000
+      Protocol: HTTP
+      # TargetGroupAttributes:
+      #   - TargetGroupAttribute
+      # Targets:
+      #   - TargetDescription
+      TargetType: instance
+      UnhealthyThresholdCount: 5
+      VpcId: vpc-c54cbfae
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allows internet traffic to application
+      GroupName: ALBSecurityGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+      VpcId: vpc-c54cbfae
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allows LB traffic to App
+      GroupName: AppSecurityGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          FromPort: 5000
+          ToPort: 5000
+
+      VpcId: vpc-c54cbfae
+
+  RedisWrapperServerLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Name: RedisWrapperServerALB
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Subnets:
+        - subnet-809c84e8
+        - subnet-d3723b9f
+        - subnet-93e073e8
+
+      Type: application
+
+  RedisWrapperServerLBHTTPListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - Type: "forward"
+          TargetGroupArn: !Ref RedisWrapperServerGroup
+      LoadBalancerArn: !Ref RedisWrapperServerLB
+      Port: 80
+      Protocol: "HTTP"
+
+  AppAutoScaling:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties: 
+      AutoScalingGroupName: RedisWrapperServerASG
+      AvailabilityZones: 
+        - ap-south-1a
+        - ap-south-1b
+        - ap-south-1c
+      DesiredCapacity: 2
+      HealthCheckGracePeriod: 5
+      HealthCheckType: ELB
+      LaunchTemplate: 
+          LaunchTemplateId: !Ref AppAutoScalingLaunchTemplate
+          Version: !GetAtt AppAutoScalingLaunchTemplate.LatestVersionNumber
+      MaxSize: 3
+      MinSize: 1
+      NewInstancesProtectedFromScaleIn: false
+      TargetGroupARNs:
+        - !Ref RedisWrapperServerGroup
+
+  AppAutoScalingLaunchTemplate: 
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateData: 
+          ImageId: ami-0eeb03e72075b9bcc
+          KeyName: SSH-AWS
+          InstanceType: t2.micro
+          SecurityGroupIds: 
+            - !Ref AppSecurityGroup
+          # UserData: String
+
+      LaunchTemplateName: RedisWrapperServerLaunchTemplate
