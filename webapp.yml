@@ -11,12 +11,12 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       HealthCheckEnabled: true
-      HealthCheckIntervalSeconds: 300
+      HealthCheckIntervalSeconds: 30
       HealthCheckPath: /
       HealthCheckPort: 5000
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 5
+      HealthyThresholdCount: 2
       Name: PythonRedisWrapperServers
       Port: 5000
       Protocol: HTTP
@@ -25,7 +25,7 @@ Resources:
       # Targets:
       #   - TargetDescription
       TargetType: instance
-      UnhealthyThresholdCount: 10
+      UnhealthyThresholdCount: 5
       VpcId: vpc-c54cbfae
 
   ALBSecurityGroup:
