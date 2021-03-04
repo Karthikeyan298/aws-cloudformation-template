@@ -85,6 +85,7 @@ Resources:
       Protocol: "HTTP"
 
   AppAutoScaling:
+  # TODO use targettrackingpolicy for scaling
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties: 
       AutoScalingGroupName: RedisWrapperServerASG
